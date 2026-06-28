@@ -213,4 +213,25 @@ export class ShopsService {
     });
     return { following: !!follow };
   }
+
+  async getFollowing(userId: string) {
+    return this.prisma.shopFollow.findMany({
+      where: { followerId: userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        createdAt: true,
+        shop: {
+          select: {
+            id: true,
+            slug: true,
+            shopName: true,
+            shopDescription: true,
+            profileImage: true,
+            bannerImage: true,
+            _count: { select: { products: true, followers: true } },
+          },
+        },
+      },
+    });
+  }
 }

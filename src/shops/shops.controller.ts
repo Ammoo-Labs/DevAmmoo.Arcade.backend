@@ -47,6 +47,14 @@ export class ShopsController {
     return this.shopsService.getMine(user.id);
   }
 
+  @Get('me/following')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('supabase-jwt')
+  @ApiOperation({ summary: "List shops the current user follows" })
+  getFollowing(@CurrentUser() user: Profile) {
+    return this.shopsService.getFollowing(user.id);
+  }
+
   @Get(':slug')
   @ApiOperation({ summary: 'Get public shop page by URL slug' })
   findBySlug(@Param('slug') slug: string) {

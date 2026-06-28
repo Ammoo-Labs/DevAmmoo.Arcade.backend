@@ -37,6 +37,13 @@ export class AuthController {
     return this.authService.elevateToSeller(user.id);
   }
 
+  @Get('me/seller-status')
+  @ApiOperation({ summary: 'Check whether the current user is a seller and whether their shop exists yet' })
+  @ApiResponse({ status: 200, description: '{ isSeller, hasShop, shopApprovalStatus }' })
+  getSellerStatus(@CurrentUser() user: Profile) {
+    return this.authService.getSellerStatus(user.id);
+  }
+
   @Post('me/avatar')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(

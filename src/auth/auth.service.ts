@@ -94,6 +94,19 @@ export class AuthService {
     });
   }
 
+  async getSellerStatus(userId: string) {
+    const profile = await this.prisma.profile.findUniqueOrThrow({
+      where: { id: userId },
+      include: { shop: { select: { approvalStatus: true } } },
+    });
+
+    return {
+      isSeller: profile.role === Role.seller,
+      hasShop: !!profile.shop,
+      shopApprovalStatus: profile.shop?.approvalStatus ?? null,
+    };
+  }
+
   async uploadAvatar(userId: string, file: Express.Multer.File) {
     const url = await this.storage.upload('avatars', userId, file);
     return this.prisma.profile.update({

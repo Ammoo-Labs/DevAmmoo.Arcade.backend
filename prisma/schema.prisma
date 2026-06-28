@@ -124,6 +124,7 @@ model Profile {
   payoutReqs    PayoutRequest[]
   transactions  PayoutTransaction[]
   bankDetails   BankDetails?
+  reviews       Review[]
 
   @@index([role])
   @@index([accountStatus])
@@ -205,6 +206,7 @@ model Product {
   cartItems  CartItem[]
   orderItems OrderItem[]
   wishlist   Wishlist[]
+  reviews    Review[]
 
   @@index([shopId])
   @@index([sellerId])
@@ -394,6 +396,24 @@ model SiteSettings {
   allowRegistration   Boolean  @default(true)
   enableNotifications Boolean  @default(true)
   updatedAt           DateTime @updatedAt
+}
+
+// Review — one review per user per product. Product.rating/reviewCount are
+// recomputed from these rows whenever a review is created, edited, or removed.
+model Review {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @db.Uuid
+  userId    String   @db.Uuid
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+  user    Profile @relation(fields: [userId], references: [id])
+
+  @@unique([userId, productId])
+  @@index([productId])
 }
 
 // HeroBanner — promotional banners managed by admin.

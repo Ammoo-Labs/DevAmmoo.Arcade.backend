@@ -11,6 +11,7 @@ import { OrdersModule } from './orders/orders.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { ShopsModule } from './shops/shops.module';
 import { StorageModule } from './storage/storage.module';
 import { WishlistModule } from './wishlist/wishlist.module';
@@ -30,6 +31,7 @@ import { WishlistModule } from './wishlist/wishlist.module';
     NotificationsModule,
     AdminModule,
     WishlistModule,
+    ReviewsModule,
   ],
   providers: [JwtStrategy],
 })

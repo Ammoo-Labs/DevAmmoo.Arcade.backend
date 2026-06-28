@@ -1,0 +1,413 @@
+// Ammoo Arcade — Prisma schema
+// Datasource: Supabase Postgres
+// Two connection strings are required:
+//   DATABASE_URL  — pooled (PgBouncer) used by the running app
+//   DIRECT_URL    — direct connection used by `prisma migrate`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  customer
+  seller
+  admin
+}
+
+enum AccountStatus {
+  active
+  inactive
+  suspended
+  banned
+}
+
+enum ShopApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum ProfileChangeStatus {
+  none
+  pending
+}
+
+enum ProductStatus {
+  active
+  inactive
+  draft
+}
+
+enum PostApprovalStatus {
+  pending
+  approved
+  rejected
+  under_review
+}
+
+enum OrderStatus {
+  pending
+  on_hold
+  processing
+  packaged
+  shipped
+  completed
+  cancelled
+}
+
+enum PaymentStatus {
+  paid
+  pending
+  failed
+}
+
+enum PayoutRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+enum TransactionStatus {
+  completed
+  pending
+  failed
+}
+
+enum AccountType {
+  savings
+  checking
+}
+
+enum NotificationType {
+  shipped
+  cancelled
+  on_hold
+  processing
+  completed
+  general
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+// Profile — 1:1 with Supabase auth.users (same UUID primary key).
+// Passwords are never stored here; Supabase Auth owns credentials.
+model Profile {
+  id            String        @id @db.Uuid  // = Supabase auth.users.id
+  name          String
+  role          Role          @default(customer)
+  profileImage  String?
+  phone         String?
+  address       String?
+  postalCode    String?
+  city          String?
+  accountStatus AccountStatus @default(active)
+  isVerified    Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  shop          Shop?
+  products      Product[]
+  cartItems     CartItem[]
+  buyerOrders   Order[]            @relation("BuyerOrders")
+  sellerItems   OrderItem[]        @relation("SellerOrderItems")
+  notifications Notification[]
+  wishlist      Wishlist[]
+  following     ShopFollow[]
+  payoutReqs    PayoutRequest[]
+  transactions  PayoutTransaction[]
+  bankDetails   BankDetails?
+
+  @@index([role])
+  @@index([accountStatus])
+}
+
+// Shop — one shop per seller.
+// Contains all data from the 6-step seller onboarding wizard plus
+// ongoing profile data.
+model Shop {
+  id                    String              @id @default(uuid()) @db.Uuid
+  sellerId              String              @unique @db.Uuid
+  shopName              String
+  slug                  String              @unique
+  shopDescription       String?
+  profileImage          String?             // Supabase Storage URL
+  bannerImage           String?             // Supabase Storage URL
+  courierService        String?
+  phone                 String?
+  email                 String?
+  address               String?
+  shopAddress           String?
+  shopEmail             String?
+  shopPhone             String?
+  // {facebook,instagram,twitter,youtube,tiktok} — stored as JSON
+  socialLinks           Json?
+  returnPolicy          String?
+  returnableItems       String?
+  nonReturnableItems    String?
+  exchangePolicy        String?
+  exchangeConditions    String?
+  returnSteps           String?
+  refundInfo            String?
+  accountStatus         AccountStatus       @default(active)
+  approvalStatus        ShopApprovalStatus  @default(pending)
+  // Sensitive-field changes that await admin approval before going live
+  pendingProfileChanges Json?
+  profileChangeStatus   ProfileChangeStatus @default(none)
+  // Identity verification captured during wizard
+  idType                String?
+  idNumber              String?
+  nic                   String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  seller    Profile      @relation(fields: [sellerId], references: [id])
+  products  Product[]
+  followers ShopFollow[]
+
+  @@index([slug])
+  @@index([approvalStatus])
+  @@index([accountStatus])
+}
+
+// Product — belongs to a shop; can be queried directly by sellerId for speed.
+model Product {
+  id               String             @id @default(uuid()) @db.Uuid
+  shopId           String             @db.Uuid
+  sellerId         String             @db.Uuid   // denormalised from Shop for OMS queries
+  name             String
+  description      String
+  category         String
+  price            Decimal            @db.Decimal(12, 2)
+  originalPrice    Decimal?           @db.Decimal(12, 2)
+  stock            Int                @default(0)
+  status           ProductStatus      @default(draft)
+  approvalStatus   PostApprovalStatus @default(pending)
+  rejectionComment String?
+  images           String[]           // ordered list of Supabase Storage URLs
+  sales            Int                @default(0)   // denormalised unit-sold count
+  tags             String[]
+  rating           Decimal            @default(0) @db.Decimal(3, 2)
+  reviewCount      Int                @default(0)
+  isNew            Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  shop       Shop        @relation(fields: [shopId], references: [id])
+  seller     Profile     @relation(fields: [sellerId], references: [id])
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  wishlist   Wishlist[]
+
+  @@index([shopId])
+  @@index([sellerId])
+  @@index([status, approvalStatus])
+  @@index([category])
+}
+
+// CartItem — server-persisted per user. Variants (size/color) are separate rows.
+// Duplicate detection (same product+variant) is handled in the service layer
+// because NULL != NULL in SQL unique constraints.
+model CartItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  productId String   @db.Uuid
+  quantity  Int      @default(1)
+  size      String?
+  color     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    Profile @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([userId])
+}
+
+// Order — one order per checkout, potentially spanning multiple sellers.
+// The buyer's name and email are snapshotted for immutability.
+model Order {
+  id              String        @id @default(uuid()) @db.Uuid
+  buyerId         String        @db.Uuid
+  customerName    String        // snapshot at order time
+  customerEmail   String        // snapshot at order time
+  status          OrderStatus   @default(pending)
+  paymentStatus   PaymentStatus @default(paid)
+  subtotal        Decimal       @db.Decimal(12, 2)
+  tax             Decimal       @db.Decimal(12, 2)
+  shipping        Decimal       @db.Decimal(12, 2)
+  total           Decimal       @db.Decimal(12, 2)
+  shippingAddress String
+  trackingNumber  String?
+  handoverProof   String?       // Supabase Storage URL (was base64 in localStorage)
+  adminReviewed   Boolean       @default(false)
+  // Array of {status, timestamp, note?} — append-only via service
+  statusHistory   Json
+  orderDate       DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  buyer         Profile        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  items         OrderItem[]
+  notifications Notification[]
+
+  @@index([buyerId])
+  @@index([status])
+}
+
+// OrderItem — one row per product per order.
+// sellerId is stored here so each seller sees only their own items in the OMS.
+// This fixes the checkout bug where every order was assigned to "seller-sarah".
+model OrderItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  orderId   String   @db.Uuid
+  productId String   @db.Uuid
+  sellerId  String   @db.Uuid   // the actual product owner — not hardcoded
+  name      String              // product name snapshot
+  image     String              // product image snapshot
+  price     Decimal  @db.Decimal(12, 2)
+  quantity  Int
+  size      String?
+  color     String?
+  createdAt DateTime @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+  seller  Profile @relation("SellerOrderItems", fields: [sellerId], references: [id])
+
+  @@index([orderId])
+  @@index([sellerId])
+}
+
+// PayoutRequest — seller requests a withdrawal; admin approves/rejects.
+model PayoutRequest {
+  id                  String              @id @default(uuid()) @db.Uuid
+  sellerId            String              @db.Uuid
+  amount              Decimal             @db.Decimal(12, 2)
+  status              PayoutRequestStatus @default(pending)
+  adminNote           String?
+  bankDetailsSnapshot Json                // BankDetails snapshot at request time
+  requestDate         DateTime            @default(now())
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  seller       Profile            @relation(fields: [sellerId], references: [id])
+  transactions PayoutTransaction[]
+
+  @@index([sellerId])
+  @@index([status])
+}
+
+// PayoutTransaction — ledger record created when a payout is approved and sent.
+model PayoutTransaction {
+  id              String            @id @default(uuid()) @db.Uuid
+  sellerId        String            @db.Uuid
+  amount          Decimal           @db.Decimal(12, 2)
+  status          TransactionStatus @default(completed)
+  method          String            @default("Bank Transfer")
+  payoutRequestId String?           @db.Uuid
+  date            DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+
+  seller        Profile        @relation(fields: [sellerId], references: [id])
+  payoutRequest PayoutRequest? @relation(fields: [payoutRequestId], references: [id])
+
+  @@index([sellerId])
+}
+
+// BankDetails — one set of bank details per seller.
+model BankDetails {
+  id            String      @id @default(uuid()) @db.Uuid
+  sellerId      String      @unique @db.Uuid
+  bankName      String
+  accountHolder String
+  accountNumber String
+  routingNumber String
+  accountType   AccountType @default(savings)
+  iban          String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  seller Profile @relation(fields: [sellerId], references: [id])
+}
+
+// Notification — in-app notifications per user (buyer order updates etc.).
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  orderId   String?          @db.Uuid
+  message   String
+  read      Boolean          @default(false)
+  type      NotificationType @default(general)
+  createdAt DateTime         @default(now())
+
+  user  Profile @relation(fields: [userId], references: [id])
+  order Order?  @relation(fields: [orderId], references: [id])
+
+  @@index([userId])
+  @@index([userId, read])
+}
+
+// Wishlist — many-to-many between Profile and Product.
+model Wishlist {
+  userId    String   @db.Uuid
+  productId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user    Profile @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([userId, productId])
+  @@index([userId])
+}
+
+// ShopFollow — many-to-many between Profile (follower) and Shop.
+model ShopFollow {
+  followerId String   @db.Uuid
+  shopId     String   @db.Uuid
+  createdAt  DateTime @default(now())
+
+  follower Profile @relation(fields: [followerId], references: [id])
+  shop     Shop    @relation(fields: [shopId], references: [id])
+
+  @@id([followerId, shopId])
+  @@index([followerId])
+  @@index([shopId])
+}
+
+// SiteSettings — singleton row; enforced in the service layer.
+model SiteSettings {
+  id                  String   @id @default(uuid()) @db.Uuid
+  siteName            String   @default("Ammoo Arcade")
+  siteDescription     String   @default("")
+  logoUrl             String?
+  footerText          String   @default("© 2024 Ammoo Arcade. All rights reserved.")
+  contactEmail        String   @default("contact@ammooarcade.com")
+  maintenanceMode     Boolean  @default(false)
+  allowRegistration   Boolean  @default(true)
+  enableNotifications Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
+}
+
+// HeroBanner — promotional banners managed by admin.
+model HeroBanner {
+  id             String    @id @default(uuid()) @db.Uuid
+  title          String
+  description    String
+  imageUrl       String    // Supabase Storage URL
+  ctaText        String    @default("Shop Now")
+  ctaLink        String    @default("/products")
+  isActive       Boolean   @default(false)
+  sellerName     String?
+  salePercentage Int?
+  validUntil     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}

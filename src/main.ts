@@ -10,8 +10,15 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // ── CORS ───────────────────────────────────────────────────────────────────
+  // FRONTEND_URL accepts a comma-separated list so both the production
+  // domain and Vercel preview deployments can be allowed at once.
+  const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

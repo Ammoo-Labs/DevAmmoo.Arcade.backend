@@ -2,12 +2,15 @@
   "name": "ammoo-arcade-backend",
   "version": "0.1.0",
   "description": "NestJS backend for Ammoo Arcade marketplace",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "prisma migrate deploy && node dist/main",
     "lint": "eslint \"{src}/**/*.ts\" --fix",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
@@ -29,6 +32,7 @@
     "jwks-rsa": "^3.2.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "prisma": "^5.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "ws": "^8.21.0"
@@ -47,7 +51,6 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
     "prettier": "^3.4.2",
-    "prisma": "^5.22.0",
     "typescript": "^5.7.2"
   }
 }

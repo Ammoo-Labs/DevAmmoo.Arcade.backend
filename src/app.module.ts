@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { JwtStrategy } from './common/strategies/jwt.strategy';
 import { validate } from './config/env.config';
+import { HealthController } from './health/health.controller';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
 import { PayoutsModule } from './payouts/payouts.module';
@@ -33,6 +34,7 @@ import { WishlistModule } from './wishlist/wishlist.module';
     WishlistModule,
     ReviewsModule,
   ],
+  controllers: [HealthController],
   providers: [JwtStrategy],
 })
 export class AppModule {}

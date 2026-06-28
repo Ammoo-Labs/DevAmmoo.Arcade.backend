@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { Profile, Role } from '@prisma/client';
+import { passportJwtSecret } from 'jwks-rsa';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -25,10 +26,21 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
+    const supabaseUrl = configService.getOrThrow<string>('SUPABASE_URL');
+
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.getOrThrow<string>('SUPABASE_JWT_SECRET'),
+      // Modern Supabase projects sign access tokens asymmetrically (ES256)
+      // rather than with the legacy shared HS256 secret. Verify against the
+      // project's JWKS instead of SUPABASE_JWT_SECRET.
+      algorithms: ['ES256', 'RS256'],
+      secretOrKeyProvider: passportJwtSecret({
+        cache: true,
+        rateLimit: true,
+        jwksRequestsPerMinute: 5,
+        jwksUri: `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
+      }),
       // Supabase sets aud to "authenticated" — ignore it so we don't need
       // to configure the audience param on every call.
     });

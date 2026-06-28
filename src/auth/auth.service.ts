@@ -74,36 +74,24 @@ export class AuthService {
 
     if (profile.role === Role.seller) return profile;
 
-    // Generate a unique slug from the user's name + partial UUID
-    const baseSlug = profile.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    const slug = `${baseSlug}-${userId.slice(0, 8)}`;
-
-    const [updatedProfile, shop] = await this.prisma.$transaction([
-      this.prisma.profile.update({
-        where: { id: userId },
-        data: { role: Role.seller },
-      }),
-      this.prisma.shop.create({
-        data: {
-          sellerId: userId,
-          shopName: `${profile.name}'s Shop`,
-          slug,
+    // No Shop row is created here — the seller onboarding wizard creates the
+    // real shop via POST /shops (with name, ID verification, images, etc.).
+    return this.prisma.profile.update({
+      where: { id: userId },
+      data: { role: Role.seller },
+      include: {
+        shop: {
+          select: {
+            id: true,
+            shopName: true,
+            slug: true,
+            profileImage: true,
+            approvalStatus: true,
+            accountStatus: true,
+          },
         },
-        select: {
-          id: true,
-          shopName: true,
-          slug: true,
-          profileImage: true,
-          approvalStatus: true,
-          accountStatus: true,
-        },
-      }),
-    ]);
-
-    return { ...updatedProfile, shop };
+      },
+    });
   }
 
   async uploadAvatar(userId: string, file: Express.Multer.File) {
